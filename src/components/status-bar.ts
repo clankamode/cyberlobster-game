@@ -15,6 +15,9 @@ export class StatusBar extends LitElement {
   @property({ type: Number, reflect: true })
   time = 0;
 
+  @property({ type: Number, reflect: true })
+  streak = 0;
+
   @property({ type: Number, attribute: 'trace', reflect: true })
   tracePercent = 0;
 
@@ -72,6 +75,7 @@ export class StatusBar extends LitElement {
         <span class="item">SCORE ${this.score}</span>
         <span class="item">LIVES ${this.lives}</span>
         <span class="item">TIME ${this.time}s</span>
+        <span class="item">STREAK ${this.streak}</span>
         <span class="item ${traceClass}">TRACE ${this.tracePercent}%</span>
       </div>
     `;
