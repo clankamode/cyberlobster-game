@@ -7,9 +7,28 @@ export interface GameState {
   lives: number;
   systemsBreached: number;
   timeRemaining: number;
+  streak: number;
 }
 
 const CHANGE_EVENT = "change";
+const SAVE_KEY = "cyberlobster:save";
+
+const DEFAULT_STATE: GameState = {
+  phase: "menu",
+  currentLevel: 1,
+  score: 0,
+  lives: 3,
+  systemsBreached: 0,
+  timeRemaining: 300,
+  streak: 0,
+};
+
+interface SavePayload {
+  currentLevel: number;
+  score: number;
+  lives: number;
+  streak: number;
+}
 
 export class GameStore extends EventTarget {
   private state: GameState;
@@ -17,12 +36,7 @@ export class GameStore extends EventTarget {
   constructor(initialState?: Partial<GameState>) {
     super();
     this.state = {
-      phase: "menu",
-      currentLevel: 1,
-      score: 0,
-      lives: 3,
-      systemsBreached: 0,
-      timeRemaining: 300,
+      ...DEFAULT_STATE,
       ...initialState,
     };
   }
@@ -33,25 +47,67 @@ export class GameStore extends EventTarget {
 
   setState(nextState: GameState): void {
     this.state = { ...nextState };
+    this.persistState();
     this.emitChange();
   }
 
   patchState(patch: Partial<GameState>): void {
     this.state = { ...this.state, ...patch };
+    this.persistState();
     this.emitChange();
   }
 
   reset(initialState?: Partial<GameState>): void {
     this.state = {
-      phase: "menu",
-      currentLevel: 1,
-      score: 0,
-      lives: 3,
-      systemsBreached: 0,
-      timeRemaining: 300,
+      ...DEFAULT_STATE,
       ...initialState,
     };
+    this.persistState();
     this.emitChange();
+  }
+
+  hasSavedGame(): boolean {
+    return this.loadSavedGame() !== null;
+  }
+
+  loadSavedGame(): Partial<GameState> | null {
+    if (!this.canUseStorage()) {
+      return null;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(SAVE_KEY);
+      if (!raw) {
+        return null;
+      }
+
+      const parsed = JSON.parse(raw) as Partial<SavePayload>;
+      if (
+        typeof parsed.currentLevel !== "number" ||
+        typeof parsed.score !== "number" ||
+        typeof parsed.lives !== "number"
+      ) {
+        return null;
+      }
+
+      return {
+        currentLevel: Math.max(1, Math.floor(parsed.currentLevel)),
+        score: Math.max(0, Math.floor(parsed.score)),
+        lives: Math.max(1, Math.floor(parsed.lives)),
+        streak:
+          typeof parsed.streak === "number" ? Math.max(0, Math.floor(parsed.streak)) : 0,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  clearSavedGame(): void {
+    if (!this.canUseStorage()) {
+      return;
+    }
+
+    window.localStorage.removeItem(SAVE_KEY);
   }
 
   subscribe(listener: (state: Readonly<GameState>) => void): () => void {
@@ -70,5 +126,33 @@ export class GameStore extends EventTarget {
         detail: this.getState(),
       }),
     );
+  }
+
+  private persistState(): void {
+    if (!this.canUseStorage()) {
+      return;
+    }
+
+    if (this.state.phase === "gameover") {
+      this.clearSavedGame();
+      return;
+    }
+
+    const payload: SavePayload = {
+      currentLevel: this.state.currentLevel,
+      score: this.state.score,
+      lives: this.state.lives,
+      streak: this.state.streak,
+    };
+
+    try {
+      window.localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+    } catch {
+      // Ignore storage quota/unavailable failures.
+    }
+  }
+
+  private canUseStorage(): boolean {
+    return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
   }
 }

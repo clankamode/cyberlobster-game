@@ -1,5 +1,5 @@
 import { LitElement, css, html } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
+import { customElement, property, state } from 'lit/decorators.js';
 
 const BOOT_LINES: string[] = [
   'CYBERLOBSTER BIOS v3.7.2',
@@ -22,11 +22,17 @@ const LOGO = String.raw`
 
 @customElement('boot-screen')
 export class BootScreen extends LitElement {
+  @property({ type: Boolean, attribute: 'has-continue' })
+  hasContinue = false;
+
   @state()
   private displayedLines: string[] = [];
 
   @state()
   private logoVisible = false;
+
+  @state()
+  private isReady = false;
 
   private timers: number[] = [];
 
@@ -54,6 +60,29 @@ export class BootScreen extends LitElement {
       animation: fadeIn 350ms ease forwards;
     }
 
+    .actions {
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 1px solid #2f8a3f;
+      background: #031006;
+      color: inherit;
+      font: inherit;
+      padding: 0.4rem 0.65rem;
+      cursor: pointer;
+      text-transform: uppercase;
+    }
+
+    button:hover,
+    button:focus-visible {
+      background: #0a2310;
+      outline: none;
+    }
+
     @keyframes fadeIn {
       to {
         opacity: 1;
@@ -75,6 +104,16 @@ export class BootScreen extends LitElement {
     return html`
       ${this.displayedLines.map((line) => html`<div class="line">${line}</div>`)}
       ${this.logoVisible ? html`<div class="logo">${LOGO}</div>` : null}
+      ${this.isReady
+        ? html`
+            <div class="actions">
+              <button type="button" @click=${this.onNewGame}>Start New Run</button>
+              ${this.hasContinue
+                ? html`<button type="button" @click=${this.onContinueGame}>Continue Game</button>`
+                : null}
+            </div>
+          `
+        : null}
     `;
   }
 
@@ -82,9 +121,10 @@ export class BootScreen extends LitElement {
     this.clearTimers();
     this.displayedLines = [];
     this.logoVisible = false;
+    this.isReady = false;
 
     const totalDurationMs = 3000;
-    const lineSpacing = Math.floor(totalDurationMs * 0.55 / BOOT_LINES.length);
+    const lineSpacing = Math.floor((totalDurationMs * 0.55) / BOOT_LINES.length);
 
     BOOT_LINES.forEach((line, index) => {
       const timer = window.setTimeout(() => {
@@ -98,15 +138,10 @@ export class BootScreen extends LitElement {
     }, Math.floor(totalDurationMs * 0.62));
     this.timers.push(logoTimer);
 
-    const completeTimer = window.setTimeout(() => {
-      this.dispatchEvent(
-        new CustomEvent('boot-complete', {
-          bubbles: true,
-          composed: true,
-        }),
-      );
+    const readyTimer = window.setTimeout(() => {
+      this.isReady = true;
     }, totalDurationMs);
-    this.timers.push(completeTimer);
+    this.timers.push(readyTimer);
   }
 
   private typeLine(line: string): void {
@@ -126,6 +161,24 @@ export class BootScreen extends LitElement {
     }, 14);
     this.timers.push(typer);
   }
+
+  private onNewGame = (): void => {
+    this.dispatchEvent(
+      new CustomEvent('start-new-game', {
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  };
+
+  private onContinueGame = (): void => {
+    this.dispatchEvent(
+      new CustomEvent('continue-game', {
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  };
 
   private clearTimers(): void {
     for (const timer of this.timers) {
