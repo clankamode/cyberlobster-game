@@ -1,60 +1,447 @@
 import { LitElement, css, html } from 'lit';
+import { customElement, state } from 'lit/decorators.js';
+import { EventBus, GameStore, LevelGenerator, type GameState, type HackTarget } from '../engine';
+import { PuzzleFactory } from '../puzzles/PuzzleFactory';
+import type { BasePuzzle, PuzzleFailedDetail, PuzzleSolvedDetail } from '../puzzles/BasePuzzle';
+import type { HackingTerminal } from '../components/hacking-terminal';
+import type { SystemNode } from '../components/system-map';
 
+type AppPhase = 'boot' | 'game';
+
+@customElement('cyber-app')
 export class CyberApp extends LitElement {
+  @state()
+  private phase: AppPhase = 'boot';
+
+  @state()
+  private gameState: Readonly<GameState>;
+
+  @state()
+  private mapNodes: SystemNode[] = [];
+
+  @state()
+  private selectedNodeId = '';
+
+  @state()
+  private tracePercent = 0;
+
+  @state()
+  private elapsedSeconds = 0;
+
+  private readonly store = new GameStore();
+  private readonly eventBus = new EventBus();
+  private readonly levelGenerator = new LevelGenerator();
+
+  private readonly targets = new Map<string, HackTarget>();
+  private unsubscribers: Array<() => void> = [];
+  private puzzleUnsubscribers: Array<() => void> = [];
+
+  private activePuzzle: BasePuzzle | null = null;
+  private activeTarget: HackTarget | null = null;
+  private timerId?: number;
+
+  constructor() {
+    super();
+    this.gameState = this.store.getState();
+  }
+
+  connectedCallback(): void {
+    super.connectedCallback();
+    this.bindStoreAndEvents();
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.unsubscribers.forEach((unsubscribe) => unsubscribe());
+    this.unsubscribers = [];
+    this.teardownPuzzle();
+    this.stopClock();
+  }
+
   static styles = css`
     :host {
       display: block;
       min-height: 100vh;
-    }
-
-    .terminal {
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      padding: 2rem;
+      color: #d7fbd8;
+      background: radial-gradient(circle at 20% 10%, rgba(26, 61, 23, 0.35), transparent 45%),
+        radial-gradient(circle at 90% 85%, rgba(0, 84, 20, 0.22), transparent 40%),
+        #010401;
+      padding: 1rem;
       box-sizing: border-box;
     }
 
-    .screen {
-      width: min(960px, 100%);
-      border: 1px solid rgba(0, 255, 65, 0.55);
-      padding: 1.5rem;
-      background: rgba(0, 20, 0, 0.55);
-      box-shadow: 0 0 20px rgba(0, 255, 65, 0.16), inset 0 0 30px rgba(0, 255, 65, 0.06);
+    .shell {
+      display: grid;
+      gap: 0.85rem;
+      max-width: 1200px;
+      margin: 0 auto;
     }
 
-    pre {
-      margin: 0;
-      white-space: pre;
-      overflow-x: auto;
-      line-height: 1.2;
-      color: #00ff41;
-      text-shadow: 0 0 8px rgba(0, 255, 65, 0.45);
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) minmax(0, 2fr);
+      gap: 0.85rem;
+      align-items: start;
     }
 
-    .boot {
-      margin-top: 1rem;
-      font-size: 1rem;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: #00ff41;
+    .boot-wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    @media (max-width: 860px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
     }
   `;
 
   render() {
+    if (this.phase === 'boot') {
+      return html`
+        <div class="boot-wrap">
+          <boot-screen @boot-complete=${this.onBootComplete}></boot-screen>
+        </div>
+      `;
+    }
+
+    const gameOver = this.gameState.phase === 'gameover';
+
     return html`
-      <main class="terminal" role="main" aria-label="CyberLobster terminal">
-        <section class="screen">
-          <pre aria-label="CyberLobster logo">
-   ____      __             __          __               __
-  / ___/_ __/ /  ___ ______/ /  ___ ___/ /  ___  ___ ___/ /____ ____
- / /__/ // / _ \/ -_) __/ _  /  / -_) _  /__/ _ \/ -_|_-< __/ -_) __/
- \___/\_, /_.__/\__/_/  \_,_/   \__/\_,_/(_)\___/\__/___/\__/\__/_/
-      /___/
-          </pre>
-          <p class="boot">CyberLobster v0.1 - INITIALIZING...</p>
+      <main class="shell" role="main" aria-label="CyberLobster game screen">
+        <status-bar
+          .level=${this.gameState.currentLevel}
+          .score=${this.gameState.score}
+          .lives=${this.gameState.lives}
+          .time=${this.elapsedSeconds}
+          .tracePercent=${this.tracePercent}
+        ></status-bar>
+
+        <section class="layout">
+          <system-map
+            .nodes=${this.mapNodes}
+            .selectedNodeId=${this.selectedNodeId}
+            @node-selected=${this.onNodeSelected}
+          ></system-map>
+
+          <hacking-terminal
+            .disabled=${gameOver}
+            @terminal-command=${this.onTerminalCommand}
+          ></hacking-terminal>
         </section>
       </main>
     `;
+  }
+
+  private bindStoreAndEvents(): void {
+    this.unsubscribers.push(
+      this.store.subscribe((nextState) => {
+        this.gameState = nextState;
+      }),
+    );
+
+    this.unsubscribers.push(
+      this.eventBus.on('SCORE_UPDATE', ({ score }) => {
+        this.store.patchState({ score });
+      }),
+    );
+
+    this.unsubscribers.push(
+      this.eventBus.on('PUZZLE_SOLVED', () => {
+        this.store.patchState({
+          systemsBreached: this.mapNodes.filter((node) => node.state === 'breached').length,
+        });
+      }),
+    );
+
+    this.unsubscribers.push(
+      this.eventBus.on('PUZZLE_FAILED', ({ penalty }) => {
+        const nextLives = Math.max(0, this.gameState.lives - 1);
+        this.tracePercent = Math.min(100, this.tracePercent + Math.max(10, Math.floor(Math.abs(penalty) / 5)));
+        this.store.patchState({ lives: nextLives });
+        if (nextLives === 0) {
+          this.endGame('All agent lives depleted.');
+        }
+      }),
+    );
+  }
+
+  private onBootComplete = (): void => {
+    this.phase = 'game';
+    this.startLevel();
+  };
+
+  private startLevel(): void {
+    this.stopClock();
+    this.teardownPuzzle();
+
+    const currentLevel = this.gameState.currentLevel;
+    const levelTargets = this.levelGenerator.generateLevel(currentLevel);
+    this.targets.clear();
+
+    this.mapNodes = levelTargets.map((target, index) => {
+      this.targets.set(target.id, target);
+      return {
+        id: target.id,
+        label: target.name.toUpperCase(),
+        state: index === 0 ? 'accessible' : 'locked',
+      };
+    });
+
+    this.selectedNodeId = '';
+    this.tracePercent = 0;
+    this.elapsedSeconds = 0;
+
+    this.store.patchState({
+      phase: 'running',
+      timeRemaining: 300,
+      systemsBreached: 0,
+      lives: 3,
+    });
+
+    void this.updateComplete.then(() => {
+      const terminal = this.getTerminal();
+      if (!terminal) {
+        return;
+      }
+      terminal.clear();
+      terminal.printLine(`LEVEL ${currentLevel} READY`, '#8cff9e');
+      terminal.printLine('Select an ACCESSIBLE node from SYSTEM-MAP.');
+      terminal.printLine('Commands during puzzle: `hint` or answer directly.');
+    });
+
+    this.timerId = window.setInterval(() => {
+      if (this.gameState.phase !== 'running') {
+        return;
+      }
+
+      const nextRemaining = Math.max(0, this.gameState.timeRemaining - 1);
+      this.elapsedSeconds += 1;
+      this.store.patchState({ timeRemaining: nextRemaining });
+
+      if (nextRemaining === 0) {
+        this.endGame('Trace timer reached zero.');
+      }
+    }, 1000);
+  }
+
+  private onNodeSelected = (event: Event): void => {
+    const customEvent = event as CustomEvent<{ node: SystemNode }>;
+    const node = customEvent.detail.node;
+    const terminal = this.getTerminal();
+
+    if (!terminal || this.gameState.phase !== 'running') {
+      return;
+    }
+
+    if (node.state === 'locked') {
+      terminal.printLine(`SYSTEM ${node.label} is LOCKED.`, '#ffb366');
+      return;
+    }
+
+    if (node.state === 'breached') {
+      terminal.printLine(`SYSTEM ${node.label} already breached.`, '#7cc9ff');
+      return;
+    }
+
+    const target = this.targets.get(node.id);
+    if (!target) {
+      terminal.printLine('Target data missing for selected node.', '#ff6b6b');
+      return;
+    }
+
+    this.teardownPuzzle();
+    this.selectedNodeId = node.id;
+    this.activeTarget = target;
+
+    const puzzle = PuzzleFactory.createForTarget(target);
+    this.activePuzzle = puzzle;
+
+    const solvedHandler = (puzzleEvent: Event): void => {
+      const detail = (puzzleEvent as CustomEvent<PuzzleSolvedDetail>).detail;
+      this.handlePuzzleSolved(target, detail);
+    };
+
+    const failedHandler = (puzzleEvent: Event): void => {
+      const detail = (puzzleEvent as CustomEvent<PuzzleFailedDetail>).detail;
+      this.handlePuzzleFailed(target, detail);
+    };
+
+    puzzle.addEventListener('puzzle-solved', solvedHandler);
+    puzzle.addEventListener('puzzle-failed', failedHandler);
+    this.puzzleUnsubscribers.push(() => puzzle.removeEventListener('puzzle-solved', solvedHandler));
+    this.puzzleUnsubscribers.push(() => puzzle.removeEventListener('puzzle-failed', failedHandler));
+
+    terminal.clear();
+    terminal.printLine(`Target locked: ${node.label}`, '#7cc9ff');
+    terminal.printLine(`Difficulty: ${target.difficulty}`);
+    terminal.printLine('');
+    puzzle.start().split('\n').forEach((line) => terminal.printLine(line));
+  };
+
+  private onTerminalCommand = (event: Event): void => {
+    const customEvent = event as CustomEvent<{ command: string }>;
+    const command = customEvent.detail.command.trim();
+    const terminal = this.getTerminal();
+
+    if (!terminal) {
+      return;
+    }
+
+    if (this.gameState.phase === 'gameover') {
+      if (command.toLowerCase() === 'restart') {
+        this.store.patchState({
+          currentLevel: 1,
+          score: 0,
+          phase: 'running',
+        });
+        this.startLevel();
+        return;
+      }
+      terminal.printLine('Game over. Type `restart` to play again.', '#ff6b6b');
+      return;
+    }
+
+    if (!this.activePuzzle) {
+      if (command.toLowerCase() === 'help') {
+        terminal.printLine('Select an ACCESSIBLE node to start a puzzle.');
+      } else if (command.length > 0) {
+        terminal.printLine('No active puzzle. Select a node from SYSTEM-MAP.', '#ffb366');
+      }
+      return;
+    }
+
+    if (command.toLowerCase() === 'hint') {
+      terminal.printLine(this.activePuzzle.getHint(), '#f0d37a');
+      return;
+    }
+
+    const solved = this.activePuzzle.solve(command);
+    if (!solved) {
+      terminal.printLine('Access denied. Try again or type `hint`.', '#ffb366');
+    }
+  };
+
+  private handlePuzzleSolved(target: HackTarget, detail: PuzzleSolvedDetail): void {
+    const terminal = this.getTerminal();
+    const points = target.reward;
+    const nextScore = this.gameState.score + points;
+
+    this.eventBus.emit('PUZZLE_SOLVED', {
+      systemId: target.id,
+      puzzleType: detail.puzzle,
+      points,
+    });
+
+    this.eventBus.emit('SCORE_UPDATE', {
+      score: nextScore,
+      delta: points,
+    });
+
+    this.updateNodeState(target.id, 'breached');
+    this.unlockNextNode(target.id);
+
+    terminal?.printLine(`SUCCESS: ${target.name} breached (+${points})`, '#62ff7d');
+
+    if (this.mapNodes.every((node) => node.state === 'breached')) {
+      this.advanceToNextLevel();
+    } else {
+      this.activePuzzle = null;
+      this.activeTarget = null;
+      this.selectedNodeId = '';
+      terminal?.printLine('Select next ACCESSIBLE node.', '#7cc9ff');
+    }
+  }
+
+  private handlePuzzleFailed(target: HackTarget, detail: PuzzleFailedDetail): void {
+    const terminal = this.getTerminal();
+    const penalty = Math.max(25, target.difficulty * 20);
+    const nextScore = Math.max(0, this.gameState.score - penalty);
+    const nextLives = Math.max(0, this.gameState.lives - 1);
+
+    this.eventBus.emit('PUZZLE_FAILED', {
+      systemId: target.id,
+      puzzleType: detail.puzzle,
+      penalty,
+    });
+
+    this.eventBus.emit('SCORE_UPDATE', {
+      score: nextScore,
+      delta: -penalty,
+    });
+
+    terminal?.printLine(
+      detail.reason ? `FAILURE: ${detail.reason}` : `FAILURE: ${target.name} pushback detected.`,
+      '#ff6b6b',
+    );
+    terminal?.printLine(`Penalty -${penalty}. Lives remaining: ${nextLives}.`);
+
+    this.activePuzzle = null;
+    this.activeTarget = null;
+    this.selectedNodeId = '';
+  }
+
+  private advanceToNextLevel(): void {
+    const terminal = this.getTerminal();
+    const nextLevel = this.gameState.currentLevel + 1;
+
+    terminal?.printLine(`LEVEL ${this.gameState.currentLevel} COMPLETE`, '#8cff9e');
+    terminal?.printLine(`Advancing to LEVEL ${nextLevel}...`, '#8cff9e');
+
+    this.store.patchState({ currentLevel: nextLevel });
+    this.startLevel();
+  }
+
+  private endGame(reason: string): void {
+    if (this.gameState.phase === 'gameover') {
+      return;
+    }
+
+    this.store.patchState({ phase: 'gameover' });
+    this.stopClock();
+    this.teardownPuzzle();
+
+    const terminal = this.getTerminal();
+    terminal?.printLine('', '#ff6b6b');
+    terminal?.printLine(`GAME OVER: ${reason}`, '#ff6b6b');
+    terminal?.printLine(`Final score: ${this.gameState.score}`);
+    terminal?.printLine('Type `restart` to start a new run.');
+  }
+
+  private getTerminal(): HackingTerminal | null {
+    return this.renderRoot.querySelector('hacking-terminal');
+  }
+
+  private updateNodeState(nodeId: string, state: SystemNode['state']): void {
+    this.mapNodes = this.mapNodes.map((node) => (node.id === nodeId ? { ...node, state } : node));
+  }
+
+  private unlockNextNode(afterNodeId: string): void {
+    const index = this.mapNodes.findIndex((node) => node.id === afterNodeId);
+    if (index < 0) {
+      return;
+    }
+
+    for (let i = index + 1; i < this.mapNodes.length; i += 1) {
+      const node = this.mapNodes[i];
+      if (node?.state === 'locked') {
+        this.updateNodeState(node.id, 'accessible');
+        return;
+      }
+    }
+  }
+
+  private stopClock(): void {
+    if (this.timerId !== undefined) {
+      window.clearInterval(this.timerId);
+      this.timerId = undefined;
+    }
+  }
+
+  private teardownPuzzle(): void {
+    this.puzzleUnsubscribers.forEach((unsubscribe) => unsubscribe());
+    this.puzzleUnsubscribers = [];
+    this.activePuzzle = null;
+    this.activeTarget = null;
   }
 }

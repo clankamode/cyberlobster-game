@@ -1,27 +1,41 @@
-import { BasePuzzle } from './BasePuzzle';
+import type { HackTarget } from '../engine';
 import { CipherPuzzle } from './CipherPuzzle';
 import { LogicGatePuzzle } from './LogicGatePuzzle';
-import { PasswordCrackPuzzle } from './PasswordCrackPuzzle';
 import { PortScanPuzzle } from './PortScanPuzzle';
+import type { BasePuzzle } from './BasePuzzle';
 
-export enum PuzzleType {
-  CIPHER = 'CIPHER',
-  PORT_SCAN = 'PORT_SCAN',
-  LOGIC_GATE = 'LOGIC_GATE',
-  PASSWORD_CRACK = 'PASSWORD_CRACK',
-}
+export class PuzzleFactory {
+  static createForTarget(target: HackTarget): BasePuzzle {
+    const difficulty = Math.max(1, target.difficulty);
+    const selectedType = this.pickPuzzleType(target.puzzleTypes);
 
-export function createPuzzle(type: PuzzleType, difficulty: number): BasePuzzle {
-  switch (type) {
-    case PuzzleType.CIPHER:
-      return new CipherPuzzle(difficulty);
-    case PuzzleType.PORT_SCAN:
+    if (this.isPortPuzzle(selectedType)) {
       return new PortScanPuzzle(difficulty);
-    case PuzzleType.LOGIC_GATE:
-      return new LogicGatePuzzle(difficulty);
-    case PuzzleType.PASSWORD_CRACK:
-      return new PasswordCrackPuzzle(difficulty);
-    default:
-      throw new Error(`Unsupported puzzle type: ${type as string}`);
+    }
+
+    if (this.isCipherPuzzle(selectedType)) {
+      return new CipherPuzzle(difficulty);
+    }
+
+    return new LogicGatePuzzle(difficulty);
+  }
+
+  private static pickPuzzleType(puzzleTypes: string[]): string {
+    if (puzzleTypes.length === 0) {
+      return 'logic-gate';
+    }
+
+    const index = Math.floor(Math.random() * puzzleTypes.length);
+    return puzzleTypes[index] ?? 'logic-gate';
+  }
+
+  private static isPortPuzzle(type: string): boolean {
+    const normalized = type.toLowerCase();
+    return normalized.includes('port') || normalized.includes('scan') || normalized.includes('network');
+  }
+
+  private static isCipherPuzzle(type: string): boolean {
+    const normalized = type.toLowerCase();
+    return normalized.includes('cipher') || normalized.includes('hash') || normalized.includes('quantum');
   }
 }
