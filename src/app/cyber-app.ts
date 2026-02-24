@@ -3,6 +3,8 @@ import { customElement, state } from 'lit/decorators.js';
 import { EventBus, GameStore, LevelGenerator, type GameState, type HackTarget } from '../engine';
 import { PuzzleFactory } from '../puzzles/PuzzleFactory';
 import type { BasePuzzle, PuzzleFailedDetail, PuzzleSolvedDetail } from '../puzzles/BasePuzzle';
+import { addScore } from '../lib/leaderboard';
+import { soundManager } from '../lib/sound';
 import type { HackingTerminal } from '../components/hacking-terminal';
 import type { SystemNode } from '../components/system-map';
 
@@ -30,6 +32,9 @@ export class CyberApp extends LitElement {
 
   @state()
   private hasSavedRun = false;
+
+  @state()
+  private soundEnabled = soundManager.enabled;
 
   private readonly store = new GameStore();
   private readonly eventBus = new EventBus();
@@ -94,6 +99,37 @@ export class CyberApp extends LitElement {
       margin: 0 auto;
     }
 
+    .boot-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr);
+      gap: 0.85rem;
+      align-items: start;
+    }
+
+    .hud {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .sound-toggle {
+      border: 1px solid #2f8a3f;
+      background: #031006;
+      color: #d7fbd8;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 1rem;
+      line-height: 1;
+      padding: 0.45rem 0.6rem;
+      cursor: pointer;
+    }
+
+    .sound-toggle:hover,
+    .sound-toggle:focus-visible {
+      background: #0a2310;
+      outline: none;
+    }
+
     .boot-title {
       margin: 0 0 0.5rem;
       font-size: 1.5rem;
@@ -106,6 +142,10 @@ export class CyberApp extends LitElement {
     }
 
     @media (max-width: 860px) {
+      .boot-layout {
+        grid-template-columns: 1fr;
+      }
+
       .layout {
         grid-template-columns: 1fr;
       }
@@ -121,23 +161,32 @@ export class CyberApp extends LitElement {
       }
 
       .shell,
-      .layout {
+      .layout,
+      .boot-layout {
         gap: 0.5rem;
+      }
+
+      .sound-toggle {
+        padding: 0.35rem 0.55rem;
       }
     }
   `;
 
   render() {
     if (this.phase === 'boot') {
+      const isGameOver = this.gameState.phase === 'gameover';
       return html`
         <div class="boot-wrap">
           <h1 class="boot-title">CyberLobster</h1>
-          <p class="boot-copy">Initializing intrusion suite...</p>
-          <boot-screen
-            .hasContinue=${this.hasSavedRun}
-            @start-new-game=${this.onStartNewGame}
-            @continue-game=${this.onContinueGame}
-          ></boot-screen>
+          <p class="boot-copy">${isGameOver ? 'Run terminated. Ready for redeploy.' : 'Initializing intrusion suite...'}</p>
+          <section class="boot-layout">
+            <boot-screen
+              .hasContinue=${this.hasSavedRun}
+              @start-new-game=${this.onStartNewGame}
+              @continue-game=${this.onContinueGame}
+            ></boot-screen>
+            <leaderboard-panel></leaderboard-panel>
+          </section>
         </div>
       `;
     }
@@ -146,14 +195,25 @@ export class CyberApp extends LitElement {
 
     return html`
       <main class="shell" role="main" aria-label="CyberLobster game screen">
-        <status-bar
-          .level=${this.gameState.currentLevel}
-          .score=${this.gameState.score}
-          .lives=${this.gameState.lives}
-          .time=${this.elapsedSeconds}
-          .streak=${this.gameState.streak}
-          .tracePercent=${this.tracePercent}
-        ></status-bar>
+        <section class="hud">
+          <status-bar
+            .level=${this.gameState.currentLevel}
+            .score=${this.gameState.score}
+            .lives=${this.gameState.lives}
+            .time=${this.elapsedSeconds}
+            .streak=${this.gameState.streak}
+            .tracePercent=${this.tracePercent}
+          ></status-bar>
+          <button
+            class="sound-toggle"
+            type="button"
+            @click=${this.onToggleSound}
+            aria-label=${this.soundEnabled ? 'Disable sound' : 'Enable sound'}
+            title=${this.soundEnabled ? 'Disable sound' : 'Enable sound'}
+          >
+            ${this.soundEnabled ? '🔊' : '🔇'}
+          </button>
+        </section>
 
         <section class="layout">
           <system-map
@@ -187,6 +247,7 @@ export class CyberApp extends LitElement {
 
     this.unsubscribers.push(
       this.eventBus.on('PUZZLE_SOLVED', () => {
+        soundManager.play('solve');
         this.store.patchState({
           systemsBreached: this.mapNodes.filter((node) => node.state === 'breached').length,
         });
@@ -197,7 +258,11 @@ export class CyberApp extends LitElement {
       this.eventBus.on('PUZZLE_FAILED', ({ penalty }) => {
         const nextLives = Math.max(0, this.gameState.lives - 1);
         const nextTrace = Math.min(100, this.tracePercent + Math.max(10, Math.floor(Math.abs(penalty) / 5)));
+        if (nextTrace > this.tracePercent) {
+          soundManager.play('trace');
+        }
         this.tracePercent = nextTrace;
+        soundManager.play('fail');
         this.store.patchState({ lives: nextLives });
         if (nextTrace >= 100) {
           this.store.patchState({ streak: 0 });
@@ -210,6 +275,7 @@ export class CyberApp extends LitElement {
   }
 
   private onStartNewGame = (): void => {
+    soundManager.play('start');
     this.store.reset({
       phase: 'running',
       currentLevel: 1,
@@ -222,6 +288,7 @@ export class CyberApp extends LitElement {
   };
 
   private onContinueGame = (): void => {
+    soundManager.play('start');
     const saved = this.store.loadSavedGame();
     if (!saved) {
       this.onStartNewGame();
@@ -485,10 +552,13 @@ export class CyberApp extends LitElement {
       return;
     }
 
+    addScore(this.gameState.score, this.gameState.currentLevel);
     this.store.patchState({ phase: 'gameover' });
     this.store.clearSavedGame();
     this.stopClock();
     this.teardownPuzzle();
+    this.hasSavedRun = false;
+    this.phase = 'boot';
 
     const terminal = this.getTerminal();
     terminal?.printLine('', '#ff6b6b');
@@ -496,6 +566,11 @@ export class CyberApp extends LitElement {
     terminal?.printLine(`Final score: ${this.gameState.score}`);
     terminal?.printLine('Type `restart` to start a new run.');
   }
+
+  private onToggleSound = (): void => {
+    soundManager.toggle();
+    this.soundEnabled = soundManager.enabled;
+  };
 
   private getTerminal(): HackingTerminal | null {
     return this.renderRoot.querySelector('hacking-terminal');
