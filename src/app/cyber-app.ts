@@ -177,7 +177,7 @@ export class CyberApp extends LitElement {
       const isGameOver = this.gameState.phase === 'gameover';
       return html`
         <div class="boot-wrap">
-          <h1 class="boot-title">CyberLobster</h1>
+          <h1 class="boot-title">Ghost Terminal</h1>
           <p class="boot-copy">${isGameOver ? 'Run terminated. Ready for redeploy.' : 'Initializing intrusion suite...'}</p>
           <section class="boot-layout">
             <boot-screen
@@ -194,7 +194,7 @@ export class CyberApp extends LitElement {
     const gameOver = this.gameState.phase === 'gameover';
 
     return html`
-      <main class="shell" role="main" aria-label="CyberLobster game screen">
+      <main class="shell" role="main" aria-label="Ghost Terminal game screen">
         <section class="hud">
           <status-bar
             .level=${this.gameState.currentLevel}

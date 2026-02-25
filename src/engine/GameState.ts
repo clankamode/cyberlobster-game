@@ -11,7 +11,7 @@ export interface GameState {
 }
 
 const CHANGE_EVENT = "change";
-const SAVE_KEY = "cyberlobster:save";
+const SAVE_KEY = "ghost-terminal:save";
 
 const DEFAULT_STATE: GameState = {
   phase: "menu",
