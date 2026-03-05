@@ -5,3 +5,4 @@ export * from './MemoryMatrixPuzzle';
 export * from './PasswordCrackPuzzle';
 export * from './PortScanPuzzle';
 export * from './PuzzleFactory';
+export * from './rng';

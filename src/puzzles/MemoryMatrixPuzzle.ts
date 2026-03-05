@@ -1,4 +1,5 @@
 import { BasePuzzle } from './BasePuzzle';
+import { defaultPuzzleRng, type PuzzleRng } from './rng';
 
 interface MemoryCell {
   row: number;
@@ -18,9 +19,11 @@ export class MemoryMatrixPuzzle extends BasePuzzle {
   private hidden = false;
   private hintedCells = 0;
   private hideTimer?: number;
+  private readonly rng: PuzzleRng;
 
-  constructor(difficulty: number) {
+  constructor(difficulty: number, rng: PuzzleRng = defaultPuzzleRng) {
     super(30 + difficulty * 15, difficulty);
+    this.rng = rng;
   }
 
   start(): string {
@@ -181,6 +184,6 @@ export class MemoryMatrixPuzzle extends BasePuzzle {
   }
 
   private randomInt(min: number, max: number): number {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
+    return Math.floor(this.rng() * (max - min + 1)) + min;
   }
 }

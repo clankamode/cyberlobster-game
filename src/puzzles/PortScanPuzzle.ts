@@ -1,4 +1,5 @@
 import { BasePuzzle } from './BasePuzzle';
+import { defaultPuzzleRng, type PuzzleRng } from './rng';
 
 interface PortEntry {
   port: number;
@@ -22,9 +23,11 @@ export class PortScanPuzzle extends BasePuzzle {
   private ports: PortEntry[] = [];
   private vulnerablePort = 0;
   private clue = '';
+  private readonly rng: PuzzleRng;
 
-  constructor(difficulty: number) {
+  constructor(difficulty: number, rng: PuzzleRng = defaultPuzzleRng) {
     super(40 + difficulty * 20, difficulty);
+    this.rng = rng;
   }
 
   start(): string {
@@ -92,7 +95,7 @@ export class PortScanPuzzle extends BasePuzzle {
 
   private shuffle<T>(values: T[]): T[] {
     for (let i = values.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(this.rng() * (i + 1));
       [values[i], values[j]] = [values[j], values[i]];
     }
 
@@ -100,6 +103,6 @@ export class PortScanPuzzle extends BasePuzzle {
   }
 
   private randomInt(min: number, max: number): number {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
+    return Math.floor(this.rng() * (max - min + 1)) + min;
   }
 }
