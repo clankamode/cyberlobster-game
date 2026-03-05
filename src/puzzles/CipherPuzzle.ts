@@ -1,4 +1,5 @@
 import { BasePuzzle } from './BasePuzzle';
+import { defaultPuzzleRng, type PuzzleRng } from './rng';
 
 type CipherVariant = 'CAESAR' | 'ROT13' | 'ATBASH';
 
@@ -18,9 +19,11 @@ export class CipherPuzzle extends BasePuzzle {
   private plainText = '';
   private encodedText = '';
   private hintIndex = 0;
+  private readonly rng: PuzzleRng;
 
-  constructor(difficulty: number) {
+  constructor(difficulty: number, rng: PuzzleRng = defaultPuzzleRng) {
     super(45 + difficulty * 20, difficulty);
+    this.rng = rng;
   }
 
   start(): string {
@@ -136,6 +139,6 @@ export class CipherPuzzle extends BasePuzzle {
   }
 
   private randomInt(min: number, max: number): number {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
+    return Math.floor(this.rng() * (max - min + 1)) + min;
   }
 }

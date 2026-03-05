@@ -1,4 +1,5 @@
 import { BasePuzzle } from './BasePuzzle';
+import { defaultPuzzleRng, type PuzzleRng } from './rng';
 
 type Gate = 'AND' | 'OR' | 'NOT' | 'XOR';
 
@@ -7,9 +8,11 @@ export class LogicGatePuzzle extends BasePuzzle {
   private b = 0;
   private gates: Gate[] = [];
   private expectedOutput = 0;
+  private readonly rng: PuzzleRng;
 
-  constructor(difficulty: number) {
+  constructor(difficulty: number, rng: PuzzleRng = defaultPuzzleRng) {
     super(30 + difficulty * 25, difficulty);
+    this.rng = rng;
   }
 
   start(): string {
@@ -97,10 +100,10 @@ export class LogicGatePuzzle extends BasePuzzle {
   }
 
   private randomBit(): number {
-    return Math.random() < 0.5 ? 0 : 1;
+    return this.rng() < 0.5 ? 0 : 1;
   }
 
   private randomInt(min: number, max: number): number {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
+    return Math.floor(this.rng() * (max - min + 1)) + min;
   }
 }
