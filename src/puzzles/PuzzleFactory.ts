@@ -18,23 +18,21 @@ export class PuzzleFactory {
     }
 
     if (this.isPortPuzzle(selectedType)) {
-      return new PortScanPuzzle(difficulty);
+      return new PortScanPuzzle(difficulty, rng);
     }
 
     if (this.isCipherPuzzle(selectedType)) {
-      return new CipherPuzzle(difficulty);
+      return new CipherPuzzle(difficulty, rng);
     }
 
     if (this.isMemoryPuzzle(selectedType)) {
-      return new MemoryMatrixPuzzle(difficulty);
+      return new MemoryMatrixPuzzle(difficulty, rng);
     }
 
     const fallbacks = [LogicGatePuzzle, PasswordCrackPuzzle, CipherPuzzle, PortScanPuzzle, MemoryMatrixPuzzle];
     const index = Math.floor(rng() * fallbacks.length);
     const PuzzleType = fallbacks[index] ?? LogicGatePuzzle;
-    return PuzzleType === PasswordCrackPuzzle
-      ? new PasswordCrackPuzzle(difficulty, rng)
-      : new PuzzleType(difficulty);
+    return new PuzzleType(difficulty, rng);
   }
 
   private static pickPuzzleType(puzzleTypes: string[], rng: RandomFn): string {
