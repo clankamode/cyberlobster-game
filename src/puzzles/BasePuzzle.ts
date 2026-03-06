@@ -9,17 +9,21 @@ export interface PuzzleFailedDetail {
   reason?: string;
 }
 
+export type PuzzleRng = () => number;
+
 export abstract class BasePuzzle extends EventTarget {
   public readonly timeLimit: number;
   public readonly difficulty: number;
 
+  private readonly rng: PuzzleRng;
   private isCompleted = false;
   private isFailed = false;
 
-  protected constructor(timeLimit: number, difficulty: number) {
+  protected constructor(timeLimit: number, difficulty: number, rng: PuzzleRng = Math.random) {
     super();
     this.timeLimit = timeLimit;
     this.difficulty = difficulty;
+    this.rng = rng;
   }
 
   abstract start(): string;
@@ -57,6 +61,14 @@ export abstract class BasePuzzle extends EventTarget {
         },
       }),
     );
+  }
+
+  protected random(): number {
+    return this.rng();
+  }
+
+  protected randomInt(min: number, max: number): number {
+    return Math.floor(this.random() * (max - min + 1)) + min;
   }
 
   protected normalizeInput(input: string): string {

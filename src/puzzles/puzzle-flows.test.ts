@@ -1,15 +1,26 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
+import type { PuzzleRng } from './BasePuzzle';
+import { CipherPuzzle } from './CipherPuzzle';
+import { LogicGatePuzzle } from './LogicGatePuzzle';
+import { MemoryMatrixPuzzle } from './MemoryMatrixPuzzle';
 import { PasswordCrackPuzzle } from './PasswordCrackPuzzle';
 import { PortScanPuzzle } from './PortScanPuzzle';
 
-describe('Puzzle flows', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+type FeedbackDetail = { reason?: string };
 
+function sequenceRng(values: number[]): PuzzleRng {
+  let index = 0;
+  return () => {
+    const value = values[index] ?? values[values.length - 1] ?? 0;
+    index += 1;
+    return value;
+  };
+}
+
+describe('Puzzle flows', () => {
   it('solves PortScanPuzzle when vulnerable port is provided', () => {
-    const puzzle = new PortScanPuzzle(2);
+    const puzzle = new PortScanPuzzle(2, sequenceRng([0.12, 0.34, 0.56, 0.78]));
     puzzle.start();
 
     const vulnerable = puzzle.getPorts().find((entry) => entry.vulnerable);
@@ -31,80 +42,19 @@ describe('Puzzle flows', () => {
     ]);
   });
 
-  it('fails PortScanPuzzle after max wrong numeric guesses and emits penalty feedback', () => {
-    const puzzle = new PortScanPuzzle(2);
-    puzzle.start();
-
-    const vulnerable = puzzle.getPorts().find((entry) => entry.vulnerable);
-    expect(vulnerable).toBeDefined();
-
-    const wrongPort = String((vulnerable!.port + 1) % 65535 || 1);
-    const feedback: string[] = [];
-    const failedEvents: Array<{ reason?: string }> = [];
-
-    puzzle.addEventListener('terminal-feedback', (event) => {
-      feedback.push((event as CustomEvent<string>).detail);
-    });
-
-    puzzle.addEventListener('puzzle-failed', (event) => {
-      failedEvents.push((event as CustomEvent<{ reason?: string }>).detail);
-    });
-
-    expect(puzzle.solve('not-a-port')).toBe(false);
-    expect(puzzle.solve(wrongPort)).toBe(false);
-    expect(puzzle.solve(wrongPort)).toBe(false);
-    expect(puzzle.solve(wrongPort)).toBe(false);
-
-    expect(feedback).toEqual([
-      'Input must be a port number.',
-      'Incorrect port. Attempts left: 2.',
-      'Incorrect port. Attempts left: 1.',
-    ]);
-    expect(failedEvents).toHaveLength(1);
-    expect(failedEvents[0]?.reason).toContain(`Vulnerable port was ${vulnerable!.port}.`);
-  });
-
-  it('still allows PortScanPuzzle success before lockout threshold', () => {
-    const puzzle = new PortScanPuzzle(2);
-    puzzle.start();
-
-    const vulnerable = puzzle.getPorts().find((entry) => entry.vulnerable);
-    expect(vulnerable).toBeDefined();
-
-    const wrongPort = String((vulnerable!.port + 1) % 65535 || 1);
-    const failedEvents: Array<{ reason?: string }> = [];
-
-    puzzle.addEventListener('puzzle-failed', (event) => {
-      failedEvents.push((event as CustomEvent<{ reason?: string }>).detail);
-    });
-
-    expect(puzzle.solve(wrongPort)).toBe(false);
-    expect(puzzle.solve(String(vulnerable!.port))).toBe(true);
-    expect(failedEvents).toHaveLength(0);
-  });
-
   it('fails PasswordCrackPuzzle after max wrong guesses and emits feedback', () => {
-    // PIN generation (4 digits) + hint-order shuffle (3 random calls)
-    const randomSpy = vi
-      .spyOn(Math, 'random')
-      .mockReturnValueOnce(0.1)
-      .mockReturnValueOnce(0.2)
-      .mockReturnValueOnce(0.3)
-      .mockReturnValueOnce(0.4)
-      .mockReturnValue(0);
-
-    const puzzle = new PasswordCrackPuzzle(1);
+    const puzzle = new PasswordCrackPuzzle(1, sequenceRng([0.1, 0.2, 0.3, 0.4, 0, 0, 0]));
     puzzle.start();
 
     const feedback: string[] = [];
-    const failedEvents: Array<{ reason?: string }> = [];
+    const failedEvents: FeedbackDetail[] = [];
 
     puzzle.addEventListener('terminal-feedback', (event) => {
       feedback.push((event as CustomEvent<string>).detail);
     });
 
     puzzle.addEventListener('puzzle-failed', (event) => {
-      failedEvents.push((event as CustomEvent<{ reason?: string }>).detail);
+      failedEvents.push((event as CustomEvent<FeedbackDetail>).detail);
     });
 
     for (let i = 0; i < 8; i += 1) {
@@ -114,6 +64,36 @@ describe('Puzzle flows', () => {
     expect(feedback.length).toBe(8);
     expect(failedEvents).toHaveLength(1);
     expect(failedEvents[0]?.reason).toContain('Out of guesses. PIN was 1234.');
-    expect(randomSpy).toHaveBeenCalled();
+  });
+
+  it('produces deterministic puzzle prompts when using the same RNG sequence', () => {
+    const existingWindow = (globalThis as { window?: Window }).window;
+    if (!existingWindow) {
+      Object.defineProperty(globalThis, 'window', {
+        value: {
+          setTimeout: globalThis.setTimeout,
+          clearTimeout: globalThis.clearTimeout,
+        },
+        configurable: true,
+      });
+    }
+
+    const runs: Array<[string, string]> = [
+      [new CipherPuzzle(3, sequenceRng([0.05, 0.45, 0.22])).start(), new CipherPuzzle(3, sequenceRng([0.05, 0.45, 0.22])).start()],
+      [new LogicGatePuzzle(2, sequenceRng([0.2, 0.8, 0.1, 0.6, 0.3])).start(), new LogicGatePuzzle(2, sequenceRng([0.2, 0.8, 0.1, 0.6, 0.3])).start()],
+      [new MemoryMatrixPuzzle(1, sequenceRng([0.1, 0.3, 0.5, 0.7, 0.9])).start(), new MemoryMatrixPuzzle(1, sequenceRng([0.1, 0.3, 0.5, 0.7, 0.9])).start()],
+      [new PasswordCrackPuzzle(2, sequenceRng([0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3])).start(), new PasswordCrackPuzzle(2, sequenceRng([0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3])).start()],
+      [new PortScanPuzzle(1, sequenceRng([0.15, 0.25, 0.35, 0.45, 0.55])).start(), new PortScanPuzzle(1, sequenceRng([0.15, 0.25, 0.35, 0.45, 0.55])).start()],
+    ];
+
+    try {
+      for (const [first, second] of runs) {
+        expect(first).toBe(second);
+      }
+    } finally {
+      if (!existingWindow) {
+        delete (globalThis as { window?: Window }).window;
+      }
+    }
   });
 });

@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { HackTarget } from '../engine';
+import type { PuzzleRng } from './BasePuzzle';
 import { PuzzleFactory } from './PuzzleFactory';
 
 const baseTarget: HackTarget = {
@@ -37,39 +38,38 @@ function withPuzzleType(puzzleType: string): HackTarget {
   };
 }
 
-describe('PuzzleFactory', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+function sequenceRng(values: number[]): PuzzleRng {
+  let index = 0;
+  return () => {
+    const value = values[index] ?? values[values.length - 1] ?? 0;
+    index += 1;
+    return value;
+  };
+}
 
+describe('PuzzleFactory', () => {
   it('routes LevelGenerator puzzle types to intentional puzzle implementations', () => {
     for (const [puzzleType, expectedPuzzleClass] of LEVEL_GENERATOR_ROUTING_CASES) {
-      const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);
-      const puzzle = PuzzleFactory.createForTarget(withPuzzleType(puzzleType));
+      const rng = vi.fn<PuzzleRng>(() => 0);
+      const puzzle = PuzzleFactory.createForTarget(withPuzzleType(puzzleType), rng);
 
       expect(puzzle.constructor.name, puzzleType).toBe(expectedPuzzleClass);
-      expect(randomSpy, `${puzzleType} should not use fallback selection`).toHaveBeenCalledTimes(1);
-
-      randomSpy.mockRestore();
+      expect(rng, `${puzzleType} should not use fallback selection`).toHaveBeenCalledTimes(1);
     }
   });
 
   it('selects PasswordCrackPuzzle intentionally for password-crack type', () => {
-    vi.spyOn(Math, 'random').mockReturnValue(0);
-    const puzzle = PuzzleFactory.createForTarget(withPuzzleType('password-crack'));
+    const puzzle = PuzzleFactory.createForTarget(withPuzzleType('password-crack'), () => 0);
 
     expect(puzzle.constructor.name).toBe('PasswordCrackPuzzle');
   });
 
   it('uses fallback selection only for unknown puzzle types', () => {
-    const randomSpy = vi
-      .spyOn(Math, 'random')
-      .mockReturnValueOnce(0)
-      .mockReturnValueOnce(0.8);
+    const rng = vi.fn(sequenceRng([0, 0.8]));
 
-    const puzzle = PuzzleFactory.createForTarget(withPuzzleType('unknown-puzzle-type'));
+    const puzzle = PuzzleFactory.createForTarget(withPuzzleType('unknown-puzzle-type'), rng);
 
-    expect(randomSpy).toHaveBeenCalledTimes(2);
+    expect(rng).toHaveBeenCalledTimes(2);
     expect(puzzle.constructor.name).toBe('PasswordCrackPuzzle');
   });
 });
