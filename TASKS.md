@@ -2,7 +2,7 @@
 > Last updated: 2026-02-28 | Status: Active backlog (core gameplay iteration)
 
 ## 🔴 High Priority
-- [ ] Add automated tests for `src/engine/*` and `src/puzzles/*` (state transitions, scoring events, puzzle solve/fail paths); current logic has effectively no test coverage.
+- [x] Add automated tests for `src/engine/*` and `src/puzzles/*` (state transitions, scoring events, puzzle solve/fail paths); current logic has effectively no test coverage. (completed 2026-03-05: added `src/engine/engine.test.ts` and `src/puzzles/puzzle-flows.test.ts` covering EventBus/GameStore/LevelGenerator transitions and puzzle solve+fail event paths)
 - [ ] Make puzzle generation deterministic in tests by injecting RNG instead of relying on `Math.random()` throughout puzzle classes and `PuzzleFactory`.
 - [x] Align `LevelGenerator` puzzle type strings with `PuzzleFactory` routing so generated puzzle types map to concrete puzzle implementations instead of frequent random fallback. (completed 2026-03-05: expanded routing predicates + regression tests in `src/puzzles/PuzzleFactory.test.ts`)
 - [x] Wire `PasswordCrackPuzzle` into `PuzzleFactory` selection logic (it exists but is not intentionally selected today). (completed 2026-03-05: added explicit password route in `src/puzzles/PuzzleFactory.ts`)
