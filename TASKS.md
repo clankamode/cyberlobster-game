@@ -15,7 +15,7 @@
 - [x] Document puzzle input formats and hint mechanics in README or an in-game help command. (completed 2026-03-10: expanded `README.md` with concrete answer formats, invalid-input behavior, and `hint` progression details for every implemented puzzle type)
 
 ## 🟢 Low Priority / Nice to Have
-- [ ] Show run seed in UI/log output and support replaying with a seed for debugging and speedrun consistency.
+- [x] Show run seed in UI/log output and support replaying with a seed for debugging and speedrun consistency. (completed 2026-03-10: added seed input for start/continue, surfaced run seed in HUD + terminal logs, enabled `restart <seed>` replay flow, and wired seeded run state persistence)
 - [ ] Add a debug event-log mode for `EventBus` to aid balancing and telemetry during playtests.
 - [ ] Expand README with engine/puzzle architecture notes and deployment expectations (Vite + Pages + Supabase).
 

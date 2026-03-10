@@ -21,6 +21,9 @@ export class StatusBar extends LitElement {
   @property({ type: Number, attribute: 'trace', reflect: true })
   tracePercent = 0;
 
+  @property({ type: Number, attribute: 'run-seed', reflect: true })
+  runSeed = 0;
+
   static styles = css`
     :host {
       display: block;
@@ -77,6 +80,7 @@ export class StatusBar extends LitElement {
         <span class="item">TIME ${this.time}s</span>
         <span class="item">STREAK ${this.streak}</span>
         <span class="item ${traceClass}">TRACE ${this.tracePercent}%</span>
+        <span class="item">SEED ${this.runSeed}</span>
       </div>
     `;
   }

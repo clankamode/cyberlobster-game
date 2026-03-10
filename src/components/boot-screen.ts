@@ -11,6 +11,10 @@ const BOOT_LINES: string[] = [
   'WELCOME, OPERATOR',
 ];
 
+export interface BootRunOptions {
+  seed: string;
+}
+
 const LOGO = String.raw`
    ______      __              __              __             __           
   / ____/_  __/ /_  ___  _____/ /   ____  ____/ /___  ____   / /____  _____
@@ -33,6 +37,9 @@ export class BootScreen extends LitElement {
 
   @state()
   private isReady = false;
+
+  @state()
+  private seedInput = '';
 
   private timers: number[] = [];
 
@@ -58,6 +65,32 @@ export class BootScreen extends LitElement {
       white-space: pre;
       opacity: 0;
       animation: fadeIn 350ms ease forwards;
+    }
+
+    .seed-row {
+      margin-top: 12px;
+      display: grid;
+      gap: 6px;
+      max-width: 280px;
+    }
+
+    .seed-label {
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      opacity: 0.82;
+    }
+
+    .seed-input {
+      border: 1px solid #2f8a3f;
+      background: #031006;
+      color: inherit;
+      font: inherit;
+      padding: 0.4rem 0.5rem;
+    }
+
+    .seed-input:focus-visible {
+      outline: none;
+      background: #0a2310;
     }
 
     .actions {
@@ -106,10 +139,25 @@ export class BootScreen extends LitElement {
       ${this.logoVisible ? html`<div class="logo">${LOGO}</div>` : null}
       ${this.isReady
         ? html`
+            <div class="seed-row">
+              <label class="seed-label" for="run-seed">RUN SEED (OPTIONAL)</label>
+              <input
+                id="run-seed"
+                class="seed-input"
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                autocorrect="off"
+                spellcheck="false"
+                placeholder="auto"
+                .value=${this.seedInput}
+                @input=${this.onSeedInput}
+              />
+            </div>
             <div class="actions">
               <button type="button" @click=${this.onNewGame}>Start New Run</button>
               ${this.hasContinue
-                ? html`<button type="button" @click=${this.onContinueGame}>Continue Game</button>`
+                ? html`<button type="button" @click=${this.onContinueGame}>Continue Saved Run</button>`
                 : null}
             </div>
           `
@@ -162,9 +210,15 @@ export class BootScreen extends LitElement {
     this.timers.push(typer);
   }
 
+  private onSeedInput = (event: Event): void => {
+    const target = event.target as HTMLInputElement;
+    this.seedInput = target.value;
+  };
+
   private onNewGame = (): void => {
     this.dispatchEvent(
-      new CustomEvent('start-new-game', {
+      new CustomEvent<BootRunOptions>('start-new-game', {
+        detail: { seed: this.seedInput.trim() },
         bubbles: true,
         composed: true,
       }),
@@ -173,7 +227,8 @@ export class BootScreen extends LitElement {
 
   private onContinueGame = (): void => {
     this.dispatchEvent(
-      new CustomEvent('continue-game', {
+      new CustomEvent<BootRunOptions>('continue-game', {
+        detail: { seed: this.seedInput.trim() },
         bubbles: true,
         composed: true,
       }),

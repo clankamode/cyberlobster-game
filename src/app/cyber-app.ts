@@ -1,11 +1,12 @@
 import { LitElement, css, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import { EventBus, GameStore, LevelGenerator, type GameState, type HackTarget } from '../engine';
+import { EventBus, GameStore, LevelGenerator, mulberry32, type GameState, type HackTarget } from '../engine';
 import { PuzzleFactory } from '../puzzles/PuzzleFactory';
 import type { BasePuzzle, PuzzleFailedDetail, PuzzleSolvedDetail } from '../puzzles/BasePuzzle';
 import { addScore } from '../lib/leaderboard';
 import { soundManager } from '../lib/sound';
 import type { HackingTerminal } from '../components/hacking-terminal';
+import type { BootRunOptions } from '../components/boot-screen';
 import type { SystemNode } from '../components/system-map';
 
 type AppPhase = 'boot' | 'game';
@@ -38,7 +39,9 @@ export class CyberApp extends LitElement {
 
   private readonly store = new GameStore();
   private readonly eventBus = new EventBus();
-  private readonly levelGenerator = new LevelGenerator();
+
+  private levelGenerator = new LevelGenerator();
+  private puzzleRng = mulberry32(Date.now() ^ 0xa5a5a5a5);
 
   private readonly targets = new Map<string, HackTarget>();
   private unsubscribers: Array<() => void> = [];
@@ -51,6 +54,7 @@ export class CyberApp extends LitElement {
   constructor() {
     super();
     this.gameState = this.store.getState();
+    this.syncRunSeedGenerators(this.gameState.runSeed);
     this.hasSavedRun = this.store.hasSavedGame();
   }
 
@@ -203,6 +207,7 @@ export class CyberApp extends LitElement {
             .time=${this.elapsedSeconds}
             .streak=${this.gameState.streak}
             .tracePercent=${this.tracePercent}
+            .runSeed=${this.gameState.runSeed}
           ></status-bar>
           <button
             class="sound-toggle"
@@ -274,26 +279,35 @@ export class CyberApp extends LitElement {
     );
   }
 
-  private onStartNewGame = (): void => {
+  private onStartNewGame = (event?: Event): void => {
     soundManager.play('start');
+    const requestedSeed = this.getRequestedSeed(event);
+    const runSeed = requestedSeed ?? this.generateRunSeed();
+
     this.store.reset({
       phase: 'running',
       currentLevel: 1,
       score: 0,
       lives: 3,
       streak: 0,
+      runSeed,
     });
+
+    this.syncRunSeedGenerators(runSeed);
     this.phase = 'game';
     this.startLevel({ lives: 3, streak: 0 });
   };
 
-  private onContinueGame = (): void => {
+  private onContinueGame = (event?: Event): void => {
     soundManager.play('start');
     const saved = this.store.loadSavedGame();
     if (!saved) {
-      this.onStartNewGame();
+      this.onStartNewGame(event);
       return;
     }
+
+    const requestedSeed = this.getRequestedSeed(event);
+    const runSeed = requestedSeed ?? saved.runSeed ?? this.generateRunSeed();
 
     this.store.reset({
       phase: 'running',
@@ -303,7 +317,10 @@ export class CyberApp extends LitElement {
       streak: saved.streak,
       systemsBreached: 0,
       timeRemaining: 300,
+      runSeed,
     });
+
+    this.syncRunSeedGenerators(runSeed);
     this.phase = 'game';
     this.startLevel({ lives: saved.lives, streak: saved.streak });
   };
@@ -344,6 +361,7 @@ export class CyberApp extends LitElement {
       }
       terminal.clear();
       terminal.printLine(`LEVEL ${currentLevel} READY`, '#8cff9e');
+      terminal.printLine(`RUN SEED ${this.gameState.runSeed}`, '#7cc9ff');
       terminal.printLine('Select an ACCESSIBLE node from SYSTEM-MAP.');
       terminal.printLine('Commands during puzzle: `hint` or answer directly.');
     });
@@ -392,7 +410,7 @@ export class CyberApp extends LitElement {
     this.selectedNodeId = node.id;
     this.activeTarget = target;
 
-    const puzzle = PuzzleFactory.createForTarget(target);
+    const puzzle = PuzzleFactory.createForTarget(target, this.puzzleRng);
     this.activePuzzle = puzzle;
 
     const solvedHandler = (puzzleEvent: Event): void => {
@@ -443,17 +461,25 @@ export class CyberApp extends LitElement {
     }
 
     if (this.gameState.phase === 'gameover') {
-      if (command.toLowerCase() === 'restart') {
-        this.onStartNewGame();
+      const restartMatch = command.match(/^restart(?:\s+(.+))?$/i);
+      if (restartMatch) {
+        const requestedSeed = this.parseSeedInput(restartMatch[1]?.trim() ?? '');
+        this.onStartNewGame(
+          new CustomEvent<BootRunOptions>('start-new-game', {
+            detail: { seed: requestedSeed !== null ? String(requestedSeed) : '' },
+          }),
+        );
         return;
       }
-      terminal.printLine('Game over. Type `restart` to play again.', '#ff6b6b');
+      terminal.printLine('Game over. Type `restart` or `restart <seed>` to play again.', '#ff6b6b');
       return;
     }
 
     if (!this.activePuzzle) {
       if (command.toLowerCase() === 'help') {
         terminal.printLine('Select an ACCESSIBLE node to start a puzzle.');
+      } else if (command.toLowerCase() === 'seed') {
+        terminal.printLine(`Current run seed: ${this.gameState.runSeed}`, '#7cc9ff');
       } else if (command.length > 0) {
         terminal.printLine('No active puzzle. Select a node from SYSTEM-MAP.', '#ffb366');
       }
@@ -562,7 +588,8 @@ export class CyberApp extends LitElement {
     terminal?.printLine('', '#ff6b6b');
     terminal?.printLine(`GAME OVER: ${reason}`, '#ff6b6b');
     terminal?.printLine(`Final score: ${this.gameState.score}`);
-    terminal?.printLine('Type `restart` to start a new run.');
+    terminal?.printLine(`Run seed: ${this.gameState.runSeed}`);
+    terminal?.printLine('Type `restart` to start a new run or `restart <seed>` to replay one.');
   }
 
   private onToggleSound = (): void => {
@@ -607,6 +634,37 @@ export class CyberApp extends LitElement {
     this.activePuzzle?.dispose();
     this.activePuzzle = null;
     this.activeTarget = null;
+  }
+
+  private getRequestedSeed(event?: Event): number | null {
+    if (!event) {
+      return null;
+    }
+
+    const customEvent = event as CustomEvent<BootRunOptions>;
+    return this.parseSeedInput(customEvent.detail?.seed ?? '');
+  }
+
+  private parseSeedInput(seedInput: string): number | null {
+    if (!seedInput) {
+      return null;
+    }
+
+    const parsed = Number(seedInput);
+    if (!Number.isFinite(parsed)) {
+      return null;
+    }
+
+    return Math.floor(parsed) >>> 0;
+  }
+
+  private generateRunSeed(): number {
+    return (Date.now() ^ Math.floor(Math.random() * 0x1_0000_0000)) >>> 0;
+  }
+
+  private syncRunSeedGenerators(seed: number): void {
+    this.levelGenerator = new LevelGenerator(seed);
+    this.puzzleRng = mulberry32(seed ^ 0xa5a5a5a5);
   }
 
   private getStreakMultiplier(streak: number): number {

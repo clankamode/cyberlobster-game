@@ -92,6 +92,7 @@ describe('GameStore', () => {
       streak: 4,
       systemsBreached: 2,
       timeRemaining: 187,
+      runSeed: 12345,
     });
 
     store.patchState({ score: 421 });
@@ -105,6 +106,7 @@ describe('GameStore', () => {
       streak: 4,
       systemsBreached: 2,
       timeRemaining: 187,
+      runSeed: 12345,
     });
 
     store.patchState({ phase: 'gameover' });
@@ -123,6 +125,7 @@ describe('GameStore', () => {
         streak: -5,
         systemsBreached: -3,
         timeRemaining: -20,
+        runSeed: -42,
       }),
     );
 
@@ -135,6 +138,7 @@ describe('GameStore', () => {
       streak: 0,
       systemsBreached: 0,
       timeRemaining: 0,
+      runSeed: 4294967254,
     });
   });
 
@@ -151,7 +155,7 @@ describe('GameStore', () => {
 
     const store = new GameStore();
 
-    expect(store.loadSavedGame()).toEqual({
+    expect(store.loadSavedGame()).toMatchObject({
       currentLevel: 2,
       score: 77,
       lives: 3,
@@ -159,6 +163,7 @@ describe('GameStore', () => {
       systemsBreached: 0,
       timeRemaining: 300,
     });
+    expect(store.loadSavedGame()?.runSeed).toEqual(expect.any(Number));
   });
 });
 
@@ -179,6 +184,20 @@ describe('LevelGenerator', () => {
       expect(target.defenses.length).toBeLessThanOrEqual(2);
       expect(target.reward).toBeGreaterThan(0);
     }
+  });
+
+  it('replays the same multi-level sequence for the same seed', () => {
+    const seed = 9001;
+    const firstRun = new LevelGenerator(seed);
+    const replayRun = new LevelGenerator(seed);
+
+    const firstLevelOne = firstRun.generateLevel(1, 5);
+    const replayLevelOne = replayRun.generateLevel(1, 5);
+    const firstLevelTwo = firstRun.generateLevel(2, 5);
+    const replayLevelTwo = replayRun.generateLevel(2, 5);
+
+    expect(replayLevelOne).toEqual(firstLevelOne);
+    expect(replayLevelTwo).toEqual(firstLevelTwo);
   });
 });
 
