@@ -15,7 +15,7 @@
 - [x] Document puzzle input formats and hint mechanics in README or an in-game help command. (completed 2026-03-11: added README quick reference for all puzzle answer formats, per-puzzle wrong-input behavior, and global `hint` mechanics)
 
 ## 🟢 Low Priority / Nice to Have
-- [ ] Show run seed in UI/log output and support replaying with a seed for debugging and speedrun consistency.
+- [x] Show run seed in UI/log output and support replaying with a seed for debugging and speedrun consistency. (completed 2026-03-11: added run seed visibility in status/terminal/game-over output, boot-screen seeded replay start, `replay <seed>` + `seed` commands, deterministic run RNG wiring, and engine tests for seed parsing/persistence)
 - [x] Add a debug event-log mode for `EventBus` to aid balancing and telemetry during playtests. (completed 2026-03-11: added opt-in `EventBus` debug logging with bounded in-memory log, runtime toggle, timestamp/listener metadata, and coverage in `src/engine/engine.test.ts`)
 - [x] Expand README with engine/puzzle architecture notes and deployment expectations (Vite + Pages + Supabase). (completed 2026-03-11: documented runtime architecture, puzzle model, EventBus debug log usage, and Pages/Supabase deployment expectations)
 
